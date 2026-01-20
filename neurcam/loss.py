@@ -23,6 +23,8 @@ class FuzzyCMeansLoss(nn.Module):
             return_centroids: If True, return both loss and centroids.
         """
         super(FuzzyCMeansLoss, self).__init__()
+        if m < 1.0:
+            raise ValueError(f"Fuzziness parameter m must be >= 1.0, got {m}")
         self.m = m
         self.return_centroids = return_centroids
 
@@ -54,7 +56,7 @@ class FuzzyCMeansLoss(nn.Module):
             centroids = centroids_num / centroids_den
 
         # Calculate Euclidean distances: (batch_size, n_clusters)
-        distances = torch.norm(X.unsqueeze(1) - centroids, dim=2, p=2)
+        distances = torch.cdist(X.unsqueeze(1), centroids.unsqueeze(0), p=2).squeeze(1)
 
         # Calculate the loss: mean of squared distances weighted by membership
         loss = torch.mean(torch.pow(distances, 2) * W_raised)

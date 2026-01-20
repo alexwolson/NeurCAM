@@ -604,6 +604,21 @@ class NeurCAMModel(nn.Module):
             n_clusters: Number of clusters.
         """
         super(NeurCAMModel, self).__init__()
+
+        # Validate parameters
+        if input_dim <= 0:
+            raise ValueError(f"input_dim must be positive, got {input_dim}")
+        if repr_dim <= 0:
+            raise ValueError(f"repr_dim must be positive, got {repr_dim}")
+        if o1_channels < 0:
+            raise ValueError(f"o1_channels must be non-negative, got {o1_channels}")
+        if o2_channels < 0:
+            raise ValueError(f"o2_channels must be non-negative, got {o2_channels}")
+        if n_bases <= 0:
+            raise ValueError(f"n_bases must be positive, got {n_bases}")
+        if n_clusters <= 0:
+            raise ValueError(f"n_clusters must be positive, got {n_clusters}")
+
         self.input_dim = input_dim
         self.repr_dim = repr_dim
         self.o1_channels = o1_channels
@@ -635,16 +650,20 @@ class NeurCAMModel(nn.Module):
         Returns:
             Sequential neural network module.
         """
-        if len(self.hidden_layers) == 0:
-            layers = [nn.Linear(input_size, self.n_bases)]
-        else:
-            layers = [nn.Linear(input_size, self.hidden_layers[0])]
-            for i in range(1, len(self.hidden_layers)):
-                layers.append(nn.ReLU())
-                layers.append(nn.Linear(self.hidden_layers[i - 1], self.hidden_layers[i]))
+        layers = []
 
-            layers.append(nn.ReLU())
-            layers.append(nn.Linear(self.hidden_layers[-1], self.n_bases))
+        if not self.hidden_layers:
+            layers.append(nn.Linear(input_size, self.n_bases))
+        else:
+            layers.append(nn.Linear(input_size, self.hidden_layers[0]))
+
+            for i in range(1, len(self.hidden_layers)):
+                layers.extend(
+                    [nn.ReLU(), nn.Linear(self.hidden_layers[i - 1], self.hidden_layers[i])]
+                )
+
+            layers.extend([nn.ReLU(), nn.Linear(self.hidden_layers[-1], self.n_bases)])
+
         return nn.Sequential(*layers)
 
     def _initialize_o1_layers(self) -> None:
