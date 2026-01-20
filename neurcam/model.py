@@ -12,7 +12,7 @@ from sklearn.cluster import MiniBatchKMeans, KMeans
 import random
 
 from entmax import Entmax15
-from Loss import FuzzyCMeansLoss
+from neurcam.loss import FuzzyCMeansLoss
 
 
 class NeurCAM:
