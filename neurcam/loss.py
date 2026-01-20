@@ -1,31 +1,62 @@
-import torch 
+"""Loss functions for NeurCAM clustering."""
+
+import torch
 from torch import nn
+from typing import Optional, Union
+
 
 class FuzzyCMeansLoss(nn.Module):
-    def __init__(self, m=1.0, return_centroids=False):
+    """
+    Fuzzy C-Means loss function for soft clustering.
+
+    This loss implements the objective function of fuzzy c-means clustering,
+    which minimizes the weighted sum of squared distances to cluster centroids.
+    """
+
+    def __init__(self, m: float = 1.0, return_centroids: bool = False) -> None:
+        """
+        Initialize the Fuzzy C-Means loss.
+
+        Args:
+            m: Fuzziness parameter that controls the degree of cluster overlap.
+               Higher values lead to fuzzier clusters. Must be >= 1.0.
+            return_centroids: If True, return both loss and centroids.
+        """
         super(FuzzyCMeansLoss, self).__init__()
-        self.m = m  # hyperparameter that controls the fuzziness of the cluster
+        self.m = m
         self.return_centroids = return_centroids
 
-    def forward(self, X, W, centroids=None):
+    def forward(
+        self,
+        X: torch.Tensor,
+        W: torch.Tensor,
+        centroids: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """
-        X is the input data of shape (batch_size, n_features)
-        W is the fuzzy membership matrix of shape (batch_size, cluster_size)
-        centroids is the cluster centroids of shape (cluster_size, n_features)
+        Compute the fuzzy c-means loss.
+
+        Args:
+            X: Input data of shape (batch_size, n_features).
+            W: Fuzzy membership matrix of shape (batch_size, n_clusters).
+            centroids: Cluster centroids of shape (n_clusters, n_features).
+                      If None, centroids are computed from X and W.
+
+        Returns:
+            Loss value, or tuple of (loss, centroids) if return_centroids is True.
         """
-        # Raise W to the power m
+        # Raise W to the power m for fuzzy weighting
         W_raised = torch.pow(W, self.m)
 
         # Calculate centroids if not provided
         if centroids is None:
             centroids_num = torch.sum(W_raised.unsqueeze(2) * X.unsqueeze(1), axis=0)
-            centroids_den = torch.sum(W_raised, axis=0).unsqueeze(1) + 1e-8  # Adding epsilon for numerical stability
+            centroids_den = torch.sum(W_raised, axis=0).unsqueeze(1) + 1e-8
             centroids = centroids_num / centroids_den
 
-        # Calculate distances (batch_size, cluster_size, n_features)
-        distances = torch.norm(X.unsqueeze(1) - centroids, dim=2, p=2)  # Euclidean distance
+        # Calculate Euclidean distances: (batch_size, n_clusters)
+        distances = torch.norm(X.unsqueeze(1) - centroids, dim=2, p=2)
 
-        # Calculate the loss
+        # Calculate the loss: mean of squared distances weighted by membership
         loss = torch.mean(torch.pow(distances, 2) * W_raised)
 
         if self.return_centroids:
