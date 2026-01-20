@@ -12,7 +12,7 @@ from sklearn.cluster import MiniBatchKMeans, KMeans
 import random
 
 from entmax import Entmax15
-from Loss import FuzzyCMeansLoss
+from neurcam.loss import FuzzyCMeansLoss
 
 
 class NeurCAM:
@@ -35,7 +35,7 @@ class NeurCAM:
                  smart_init: str = 'none',
                  model_dir: str = 'NeurCAMCheckpoints',
                  device: str = 'auto',
-                 verbose = True
+                 verbose: bool = True
                  ):
         """
         NeurCAM class for interpretable clustering.
@@ -159,7 +159,7 @@ class NeurCAM:
             
 
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=50, verbose=False)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=50)
         loss_func = FuzzyCMeansLoss(m=self.m)
         kld_loss = nn.KLDivLoss(reduction='batchmean')
 
@@ -194,7 +194,8 @@ class NeurCAM:
                 scheduler.step(loss)
                 epoch_loss['clust_loss'] += clust_loss.item()
                 n_points += x.shape[0]
-                p1_bar.set_postfix({'clust_loss': loss.item()})
+                if self.verbose:
+                    p1_bar.set_postfix({'clust_loss': loss.item()})
                
             epoch_loss['clust_loss'] /= n_points
             epoch_losses.append(epoch_loss)
@@ -222,12 +223,11 @@ class NeurCAM:
         gc.collect()
         
         if self.pairwise_feature_channels > 0:
-            if self.verbose and self.pairwise_feature_channels > 0:
+            if self.verbose:
                 print('Starting pairwise shape function annealing...')
-                if self.verbose:
-                    p2_bar = trange(self.o2_anneal_epochs, desc='O2 Annealing Phase')
-                else:
-                    p2_bar = range(self.o2_anneal_epochs)
+                p2_bar = trange(self.o2_anneal_epochs, desc='O2 Annealing Phase')
+            else:
+                p2_bar = range(self.o2_anneal_epochs)
 
             for epoch in p2_bar:
                 model.train()
@@ -259,21 +259,21 @@ class NeurCAM:
                     epoch_loss['clust_loss'] += clust_loss.item()
                     epoch_loss['kl_div'] += kl_div.item()
                     n_points += x.shape[0]
-                    p2_bar.set_postfix({'clust_loss': loss.item()})
+                    if self.verbose:
+                        p2_bar.set_postfix({'clust_loss': loss.item()})
                 
                 epoch_loss['clust_loss'] /= n_points
                 epoch_loss['kl_div'] /= n_points
                 epoch_losses.append(epoch_loss)
             model._lock_in_o2()
         
-        if self.verbose and self.single_feature_channels > 0:
-            print('Starting single feature shape function annealing...')
+        if self.single_feature_channels > 0:
             if self.verbose:
+                print('Starting single feature shape function annealing...')
                 p3_bar = trange(self.o1_anneal_epochs, desc='O1 Annealing Phase')
             else:
                 p3_bar = range(self.o1_anneal_epochs)
 
-        if self.single_feature_channels > 0:
             for epoch in p3_bar:
                 model.train()
                 model._anneal_o1(epoch, self.o1_anneal_epochs, self.min_temp)
@@ -304,7 +304,8 @@ class NeurCAM:
                     epoch_loss['clust_loss'] += clust_loss.item()
                     epoch_loss['kl_div'] += kl_div.item()
                     n_points += x.shape[0]
-                    p3_bar.set_postfix({'clust_loss': loss.item()})
+                    if self.verbose:
+                        p3_bar.set_postfix({'clust_loss': loss.item()})
                 
                 epoch_loss['clust_loss'] /= n_points
                 epoch_loss['kl_div'] /= n_points
@@ -345,7 +346,8 @@ class NeurCAM:
                 epoch_loss['clust_loss'] += clust_loss.item()
                 epoch_loss['kl_div'] += kl_div.item()
                 n_points += x.shape[0]
-                p4_bar.set_postfix({'clust_loss': loss.item()})
+                if self.verbose:
+                    p4_bar.set_postfix({'clust_loss': loss.item()})
                 
             epoch_loss['clust_loss'] /= n_points
             epoch_loss['kl_div'] /= n_points
