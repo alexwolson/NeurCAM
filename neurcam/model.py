@@ -35,7 +35,7 @@ class NeurCAM:
                  smart_init: str = 'none',
                  model_dir: str = 'NeurCAMCheckpoints',
                  device: str = 'auto',
-                 verbose = True
+                 verbose: bool = True
                  ):
         """
         NeurCAM class for interpretable clustering.
