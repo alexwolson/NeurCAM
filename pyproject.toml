@@ -9,9 +9,6 @@ description = "Neural Clustering Additive Model (NeurCAM) - An interpretable clu
 readme = "README.md"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
-authors = [
-    {name = "Alex Olson"}
-]
 keywords = ["machine learning", "clustering", "neural networks", "interpretability"]
 classifiers = [
     "Development Status :: 3 - Alpha",
