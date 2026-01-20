@@ -141,8 +141,20 @@ class NeurCAM:
         if X_repr is not None:
             if isinstance(X_repr, pd.DataFrame):
                 X_repr = X_repr.values
+            if X.shape[0] != X_repr.shape[0]:
+                raise ValueError(
+                    f"X and X_repr must have the same number of samples. "
+                    f"Got X.shape[0]={X.shape[0]} and X_repr.shape[0]={X_repr.shape[0]}"
+                )
         else:
             X_repr = X
+        
+        if X.shape[0] < self.k:
+            raise ValueError(
+                f"Number of samples ({X.shape[0]}) must be at least as large as "
+                f"number of clusters ({self.k})"
+            )
+        
         return X, X_repr
 
     def _compute_channel_counts(self) -> None:
@@ -157,7 +169,7 @@ class NeurCAM:
         else:
             self.pairwise_feature_channels = int(self.pf_channels)
 
-    def _create_model(self) -> NeurCAMModel:
+    def _create_model(self) -> "NeurCAMModel":
         """Create and initialize the NeurCAM model."""
         model = NeurCAMModel(
             input_dim=self.n_features,
@@ -171,7 +183,7 @@ class NeurCAM:
         return model.to(self.device)
 
     def _initialize_centroids(
-        self, model: NeurCAMModel, X_repr: np.ndarray, dataloader: DataLoader
+        self, model: "NeurCAMModel", X_repr: np.ndarray, dataloader: DataLoader
     ) -> None:
         """
         Initialize cluster centroids using the specified method.
@@ -197,13 +209,13 @@ class NeurCAM:
 
     def _train_epoch(
         self,
-        model: NeurCAMModel,
+        model: "NeurCAMModel",
         dataloader: DataLoader,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler._LRScheduler,
         loss_func: FuzzyCMeansLoss,
         kld_loss: nn.KLDivLoss,
-        model_copy: Optional[NeurCAMModel] = None,
+        model_copy: Optional["NeurCAMModel"] = None,
     ) -> Dict[str, float]:
         """
         Train for one epoch.
@@ -243,7 +255,7 @@ class NeurCAM:
 
             loss.backward()
             optimizer.step()
-            scheduler.step(loss)
+            scheduler.step(loss.detach())
 
             epoch_loss["clust_loss"] += clust_loss.item()
             n_points += x.shape[0]
@@ -256,7 +268,7 @@ class NeurCAM:
 
     def _train_phase(
         self,
-        model: NeurCAMModel,
+        model: "NeurCAMModel",
         dataloader: DataLoader,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler._LRScheduler,
@@ -264,7 +276,7 @@ class NeurCAM:
         kld_loss: nn.KLDivLoss,
         n_epochs: int,
         phase_name: str,
-        model_copy: Optional[NeurCAMModel] = None,
+        model_copy: Optional["NeurCAMModel"] = None,
         track_best: bool = True,
     ) -> Optional[Dict[str, Any]]:
         """
@@ -315,13 +327,13 @@ class NeurCAM:
 
     def _train_annealing_phase(
         self,
-        model: NeurCAMModel,
+        model: "NeurCAMModel",
         dataloader: DataLoader,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler._LRScheduler,
         loss_func: FuzzyCMeansLoss,
         kld_loss: nn.KLDivLoss,
-        model_copy: NeurCAMModel,
+        model_copy: "NeurCAMModel",
         n_epochs: int,
         phase_name: str,
         anneal_fn: str,
@@ -674,13 +686,12 @@ class NeurCAMModel(nn.Module):
         Returns:
             True if all channels have at most one selected feature.
         """
-        val_cuts_o1 = True
-        if self.o1_channels > 0:
-            o1_selection = self._get_o1_selection()
-            for i in range(self.o1_channels):
-                n_non_zero = torch.count_nonzero(o1_selection[i, :])
-                val_cuts_o1 = val_cuts_o1 and n_non_zero <= 1
-        return val_cuts_o1
+        if self.o1_channels == 0:
+            return True
+        
+        o1_selection = self._get_o1_selection()
+        non_zero_counts = torch.count_nonzero(o1_selection, dim=1)
+        return torch.all(non_zero_counts <= 1).item()
 
     def _o2_valid_cuts(self) -> bool:
         """
@@ -689,16 +700,13 @@ class NeurCAMModel(nn.Module):
         Returns:
             True if all channels have at most one selected feature per slot.
         """
-        val_cuts_o2 = True
-        if self.o2_channels > 0:
-            o2_selection = self._get_o2_selection()
-            for i in range(self.o2_channels):
-                rel_tensor1 = o2_selection[i, :, 0]
-                rel_tensor2 = o2_selection[i, :, 1]
-                n_non_zero1 = torch.count_nonzero(rel_tensor1)
-                n_non_zero2 = torch.count_nonzero(rel_tensor2)
-                val_cuts_o2 = val_cuts_o2 and n_non_zero1 <= 1 and n_non_zero2 <= 1
-        return val_cuts_o2
+        if self.o2_channels == 0:
+            return True
+        
+        o2_selection = self._get_o2_selection()
+        non_zero_counts_slot0 = torch.count_nonzero(o2_selection[:, :, 0], dim=1)
+        non_zero_counts_slot1 = torch.count_nonzero(o2_selection[:, :, 1], dim=1)
+        return (torch.all(non_zero_counts_slot0 <= 1) and torch.all(non_zero_counts_slot1 <= 1)).item()
 
     def _anneal_o1(self, o1_rel_epoch: int, o1_anneal_steps: int, min_temp: float) -> None:
         """
@@ -793,7 +801,7 @@ class NeurCAMModel(nn.Module):
         Returns:
             Logits tensor of shape (batch_size, n_clusters).
         """
-        result = torch.zeros(X.shape[0], self.n_clusters).to(X.device)
+        result = torch.zeros(X.shape[0], self.n_clusters, device=X.device)
 
         if self.o1_channels > 0:
             o1_selection_weights = self._get_o1_selection()
