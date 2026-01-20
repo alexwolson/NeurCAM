@@ -101,6 +101,16 @@ class NeurCAM:
             raise ValueError(f"n_bases must be positive, got {n_bases}")
         if min_temp <= 0:
             raise ValueError(f"min_temp must be positive, got {min_temp}")
+        if kl_weight < 0:
+            raise ValueError(f"kl_weight must be non-negative, got {kl_weight}")
+        if single_feature_channels < 0:
+            raise ValueError(
+                f"single_feature_channels must be non-negative, got {single_feature_channels}"
+            )
+        if pairwise_feature_channels < 0:
+            raise ValueError(
+                f"pairwise_feature_channels must be non-negative, got {pairwise_feature_channels}"
+            )
         if not (0 <= warmup_ratio <= 1):
             raise ValueError(f"warmup_ratio must be in [0, 1], got {warmup_ratio}")
         if not (0 <= o1_anneal_ratio <= 1):
@@ -111,8 +121,13 @@ class NeurCAM:
             raise ValueError(
                 f"smart_init must be one of ['none', 'kmeans', 'mbkmeans'], got '{smart_init}'"
             )
-        if device not in ["auto", "cuda", "cpu"]:
-            raise ValueError(f"device must be one of ['auto', 'cuda', 'cpu'], got '{device}'")
+        # Validate device is a valid PyTorch device specifier
+        # Allow "auto", or any string that torch.device() accepts
+        if device != "auto":
+            try:
+                torch.device(device)
+            except RuntimeError as e:
+                raise ValueError(f"Invalid device specifier: '{device}'. Error: {e}")
 
         self.k = k
         self.random_state = random_state
@@ -240,7 +255,7 @@ class NeurCAM:
         model: "NeurCAMModel",
         dataloader: DataLoader,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        scheduler: "torch.optim.lr_scheduler.LRScheduler",
         loss_func: FuzzyCMeansLoss,
         kld_loss: nn.KLDivLoss,
         model_copy: Optional["NeurCAMModel"] = None,
@@ -283,7 +298,6 @@ class NeurCAM:
 
             loss.backward()
             optimizer.step()
-            scheduler.step(loss.detach())
 
             epoch_loss["clust_loss"] += clust_loss.item()
             n_points += x.shape[0]
@@ -292,6 +306,9 @@ class NeurCAM:
         if model_copy is not None:
             epoch_loss["kl_div"] /= n_points
 
+        # Call scheduler once per epoch with the epoch-averaged loss
+        scheduler.step(epoch_loss["clust_loss"])
+
         return epoch_loss
 
     def _train_phase(
@@ -299,7 +316,7 @@ class NeurCAM:
         model: "NeurCAMModel",
         dataloader: DataLoader,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        scheduler: "torch.optim.lr_scheduler.LRScheduler",
         loss_func: FuzzyCMeansLoss,
         kld_loss: nn.KLDivLoss,
         n_epochs: int,
@@ -358,7 +375,7 @@ class NeurCAM:
         model: "NeurCAMModel",
         dataloader: DataLoader,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        scheduler: "torch.optim.lr_scheduler.LRScheduler",
         loss_func: FuzzyCMeansLoss,
         kld_loss: nn.KLDivLoss,
         model_copy: "NeurCAMModel",
