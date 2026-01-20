@@ -86,6 +86,34 @@ class NeurCAM:
         if hidden_layers is None:
             hidden_layers = DEFAULT_HIDDEN_LAYERS.copy()
 
+        # Validate parameters
+        if k <= 0:
+            raise ValueError(f"k must be positive, got {k}")
+        if m < 1.0:
+            raise ValueError(f"m must be >= 1.0 for fuzzy clustering, got {m}")
+        if epochs <= 0:
+            raise ValueError(f"epochs must be positive, got {epochs}")
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        if learning_rate <= 0:
+            raise ValueError(f"learning_rate must be positive, got {learning_rate}")
+        if n_bases <= 0:
+            raise ValueError(f"n_bases must be positive, got {n_bases}")
+        if min_temp <= 0:
+            raise ValueError(f"min_temp must be positive, got {min_temp}")
+        if not (0 <= warmup_ratio <= 1):
+            raise ValueError(f"warmup_ratio must be in [0, 1], got {warmup_ratio}")
+        if not (0 <= o1_anneal_ratio <= 1):
+            raise ValueError(f"o1_anneal_ratio must be in [0, 1], got {o1_anneal_ratio}")
+        if not (0 <= o2_anneal_ratio <= 1):
+            raise ValueError(f"o2_anneal_ratio must be in [0, 1], got {o2_anneal_ratio}")
+        if smart_init not in ["none", "kmeans", "mbkmeans"]:
+            raise ValueError(
+                f"smart_init must be one of ['none', 'kmeans', 'mbkmeans'], got '{smart_init}'"
+            )
+        if device not in ["auto", "cuda", "cpu"]:
+            raise ValueError(f"device must be one of ['auto', 'cuda', 'cpu'], got '{device}'")
+
         self.k = k
         self.random_state = random_state
         self.m = m
@@ -148,13 +176,13 @@ class NeurCAM:
                 )
         else:
             X_repr = X
-        
+
         if X.shape[0] < self.k:
             raise ValueError(
                 f"Number of samples ({X.shape[0]}) must be at least as large as "
                 f"number of clusters ({self.k})"
             )
-        
+
         return X, X_repr
 
     def _compute_channel_counts(self) -> None:
@@ -688,7 +716,7 @@ class NeurCAMModel(nn.Module):
         """
         if self.o1_channels == 0:
             return True
-        
+
         o1_selection = self._get_o1_selection()
         non_zero_counts = torch.count_nonzero(o1_selection, dim=1)
         return torch.all(non_zero_counts <= 1).item()
@@ -702,11 +730,13 @@ class NeurCAMModel(nn.Module):
         """
         if self.o2_channels == 0:
             return True
-        
+
         o2_selection = self._get_o2_selection()
         non_zero_counts_slot0 = torch.count_nonzero(o2_selection[:, :, 0], dim=1)
         non_zero_counts_slot1 = torch.count_nonzero(o2_selection[:, :, 1], dim=1)
-        return (torch.all(non_zero_counts_slot0 <= 1) and torch.all(non_zero_counts_slot1 <= 1)).item()
+        return (
+            torch.all(non_zero_counts_slot0 <= 1) and torch.all(non_zero_counts_slot1 <= 1)
+        ).item()
 
     def _anneal_o1(self, o1_rel_epoch: int, o1_anneal_steps: int, min_temp: float) -> None:
         """
@@ -784,10 +814,10 @@ class NeurCAMModel(nn.Module):
             non_zero_index = torch.argmax(rel_selection).item()
             rel_bases = o1_bases[:, i, :]
 
-            if non_zero_index not in results.keys():
-                results[non_zero_index] = self.o1_weights[i](rel_bases)
-            else:
+            if non_zero_index in results:
                 results[non_zero_index] += self.o1_weights[i](rel_bases)
+            else:
+                results[non_zero_index] = self.o1_weights[i](rel_bases)
 
         return results
 
